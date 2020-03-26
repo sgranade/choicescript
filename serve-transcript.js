@@ -24,7 +24,7 @@ const mimeTypes = {
 
 
 const now = new Date();
-const transcriptFilename = date.format(now, "[transcript-]YYYY-MM-DDTHH-MM-SS.txt");
+const transcriptFilename = date.format(now, "[transcript-]YYYY-MM-DDTHH-mm-ss.txt");
 let previousTranscriptLineWasBlank = false;
 let nextTranscriptMessageNumber = 0;
 let transcriptQueue = [];
