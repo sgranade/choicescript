@@ -82,6 +82,13 @@ function printParagraph(msg, parent) {
   return p;
 }
 
+function getTranscriptMode() {
+  // See if we should save a transcript or not
+  // Note that this code is duplicated in util.js
+  var url = new URL(window.location.href);
+  return url.searchParams.get("transcript") === "true";
+}
+
 function showStats() {
     if (document.getElementById('loading')) return;
     var button = document.getElementById("statsButton");
@@ -92,7 +99,9 @@ function showStats() {
       });
     }
     var currentScene = window.stats.scene;
-    var scene = new Scene("choicescript_stats", window.stats, this.nav, {secondaryMode:"stats", saveSlot:"temp"});
+    // See if we should save a transcript or not
+    var transcriptMode = getTranscriptMode();
+    var scene = new Scene("choicescript_stats", window.stats, this.nav, {secondaryMode:"stats", saveSlot:"temp", transcriptMode:transcriptMode});
     clearScreen(function() {
       setButtonTitles();
       scene.execute();
@@ -3103,7 +3112,9 @@ window.onload=function() {
         } else {
           window.storeName = map.persistence;
         }
-        var startupScene = new Scene("startup", window.stats, window.nav, {secondaryMode:"startup", saveSlot:"startup"});
+        // See if we should save a transcript or not
+        var transcriptMode = getTranscriptMode();
+        var startupScene = new Scene("startup", window.stats, window.nav, {secondaryMode:"startup", saveSlot:"startup", transcriptMode:transcriptMode});
         startupScene.startupCallback = function() {
           safeCall(null, loadAndRestoreGame);
         }

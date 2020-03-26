@@ -37,6 +37,9 @@ function Scene(name, stats, nav, options) {
     // should we print debugging information?
     this.debugMode = options.debugMode || false;
 
+    // should we broadcast transcript messages via AJAX?
+    this.transcriptMode = options.transcriptMode || false;
+
     // used for stats screen, and maybe other secondary views someday
     this.secondaryMode = options.secondaryMode;
 
@@ -75,7 +78,45 @@ function Scene(name, stats, nav, options) {
     // where should we print text?
     this.target = null;
 
+    // Information about the most recently-parsed set of options (used for the transcript)
+    this.mostRecentChoiceLine = undefined;  // 0-indexed
+    this.mostRecentOptions = undefined;  // Array of option objects
+    this.transcriptMessageCount = 0;
+
     this.accumulatedParagraph = [];
+}
+
+// Add a line to the transcript. Contains an implicit \n at the end.
+Scene.prototype.addLineToTranscript = function addToTranscript(line) {
+  if (this.transcriptMode) {
+    line = String(line)
+        .replace(/\[n\/\]/g, '\n')
+        .replace(/\[c\/\]/g, '');
+    var message = {
+      line: line,
+      messageNumber: this.transcriptMessageCount++
+    };
+    xmlhttp = new XMLHttpRequest();
+    xmlhttp.open("POST", "/post-transcript", true);
+    xmlhttp.setRequestHeader("Content-type", "text/json");
+    xmlhttp.send(JSON.stringify(message));
+  }
+}
+
+// Add the most recent options to the transcript
+Scene.prototype.addOptionsToTranscript = function addOptionsToTranscript(chosenOption) {
+  if (this.transcriptMode && this.mostRecentOptions !== undefined) {
+    this.addLineToTranscript(`*choice (${this.name} line ${this.mostRecentChoiceLine+1})`);
+    const options = this.mostRecentOptions;
+    var chosenOptionLine = -1;
+    if (chosenOption !== undefined) {
+      chosenOptionLine = chosenOption.line;
+    }
+    for (var i = 0; i < this.mostRecentOptions.length; i++) {
+      this.addLineToTranscript("\u2022 " + (options[i].line === chosenOptionLine ? "\u2605 " : "") + options[i].name);
+    }
+    this.addLineToTranscript("");
+  }
 }
 
 Scene.prototype.reexecute = function reexecute() {
@@ -253,7 +294,10 @@ Scene.prototype.replaceVariables = function (line) {
 };
 
 Scene.prototype.paragraph = function paragraph() {
-    printParagraph(this.accumulatedParagraph.join(""));
+    var paragraph = this.accumulatedParagraph.join("");
+    this.addLineToTranscript(paragraph);
+    this.addLineToTranscript("");
+    printParagraph(paragraph);
     this.accumulatedParagraph = [];
     this.prevLine = "empty";
 };
@@ -835,6 +879,7 @@ Scene.prototype.runCommand = function runCommand(line) {
 // if multiple groups are specified, allow the user to make multiple choices simultaneously
 //   all multi-dimensional choices must be valid (otherwise throw a parse error)
 Scene.prototype.choice = function choice(data) {
+    this.mostRecentChoiceLine = this.lineNum;
     var startLineNum = this.lineNum;
     var groups = data.split(/ /);
     for (var i = 0; i < groups.length; i++) {
@@ -873,6 +918,8 @@ Scene.prototype.standardResolution = function(option) {
   self.indent = self.getIndent(self.nextNonBlankLine(true/*includingThisOne*/));
   if (option.reuse && option.reuse != "allow") self.temps.choice_used[option.line-1] = 1;
   if (this.nav) this.nav.bugLog.push("#"+(option.line+1) + " " + option.name);
+  
+  this.addOptionsToTranscript(option);
 
   self.finished = false;
   self.resetPage();
@@ -1053,7 +1100,7 @@ Scene.prototype["return"] = function scene_return() {
       }
       this.finished = true;
       this.skipFooter = true;
-      var scene = new Scene(stackFrame.name, this.stats, this.nav, {debugMode:this.debugMode, secondaryMode:this.secondaryMode, saveSlot:this.saveSlot});
+      var scene = new Scene(stackFrame.name, this.stats, this.nav, {debugMode:this.debugMode, secondaryMode:this.secondaryMode, saveSlot:this.saveSlot, transcriptMode: this.transcriptMode});
       scene.temps = stackFrame.temps;
       scene.screenEmpty = this.screenEmpty;
       scene.prevLine = this.prevLine;
@@ -1094,7 +1141,10 @@ Scene.prototype.finish = function finish(buttonName) {
       if (typeof window == "undefined") return;
       if (window.forcedScene == "choicescript_stats") return;
       if (window.isAndroidApp && window.statsMode.get()) return;
-      printButton(buttonName || "Next", main, false,
+
+      if (!buttonName) buttonName = "Next";
+      this.addLineToTranscript(`*finish ${buttonName} (${this.name} line ${this.lineNum+1})`);
+      printButton(buttonName, main, false,
         function() {
           clearScreen(loadAndRestoreGame);
         }
@@ -1114,11 +1164,12 @@ Scene.prototype.finish = function finish(buttonName) {
     if (!buttonName) buttonName = "Next Chapter";
     buttonName = this.replaceVariables(buttonName);
 
+    this.addLineToTranscript(`*finish ${buttonName} (${this.name} line ${this.lineNum+1})`);
 
     printButton(buttonName, main, false,
       function() {
         safeCall(self, function() {
-            var scene = new Scene(nextSceneName, self.stats, self.nav, {debugMode:self.debugMode, secondaryMode:self.secondaryMode});
+            var scene = new Scene(nextSceneName, self.stats, self.nav, {debugMode:self.debugMode, secondaryMode:self.secondaryMode, transcriptMode:self.transcriptMode});
             scene.resetPage();
         });
       }
@@ -1190,7 +1241,7 @@ Scene.prototype.goto_scene = function gotoScene(data) {
 
     this.finished = true;
     this.skipFooter = true;
-    var scene = new Scene(result.sceneName, this.stats, this.nav, {debugMode:this.debugMode, secondaryMode:this.secondaryMode, saveSlot:this.saveSlot});
+    var scene = new Scene(result.sceneName, this.stats, this.nav, {debugMode:this.debugMode, secondaryMode:this.secondaryMode, saveSlot:this.saveSlot, transcriptMode:this.transcriptMode});
     scene.screenEmpty = this.screenEmpty;
     scene.prevLine = this.prevLine;
     scene.accumulatedParagraph = this.accumulatedParagraph;
@@ -1838,6 +1889,7 @@ Scene.prototype.verifyOptionsMatch = function verifyOptionsMatch(prev, current) 
 
 // render the prompt and the radio buttons
 Scene.prototype.renderOptions = function renderOptions(groups, options, callback) {
+    this.mostRecentOptions = options;
     var self = this;
     function replaceVars(options) {
       for (var i = 0; i < options.length; i++) {
@@ -1863,6 +1915,9 @@ Scene.prototype.page_break = function page_break(buttonName) {
     buttonName = this.replaceVariables(buttonName);
     this.paragraph();
     this.finished = true;
+
+    this.addLineToTranscript(`*page_break ${buttonName} (line ${this.lineNum+1})`);
+    this.addLineToTranscript("");
 
     var self = this;
     printButton(buttonName, main, false,
@@ -2340,6 +2395,9 @@ Scene.prototype.more_games = function more_games(now) {
 
 Scene.prototype.ending = function ending() {
     if (typeof window == "undefined") return;
+
+    this.addLineToTranscript(`*ending (${this.name} line ${this.lineNum+1})`);
+
     this.paragraph();
     var groups = [""];
     options = [];
@@ -2549,7 +2607,7 @@ Scene.prototype.restore_game = function restore_game(data) {
 
           saveCookie(function() {
             clearScreen(function() {
-              restoreGame(state, null, /*userRestored*/true);
+              restoreGame(state, null, /*userRestored*/true, this.transcriptMode);
             });
           }, "", state.stats, state.temps, state.lineNum, state.indent, this.debugMode, this.nav);
         }
@@ -2605,7 +2663,7 @@ Scene.prototype.restore_password = function restore_password() {
     saveCookie(function() {
       clearScreen(function() {
         // we're going to pretend not to be user restored, so we get reprompted to save
-        restoreGame(state, null, /*userRestored*/false);
+        restoreGame(state, null, /*userRestored*/false, this.transcriptMode);
       });
     }, "", state.stats, state.temps, state.lineNum, state.indent, this.debugMode, this.nav);
   });

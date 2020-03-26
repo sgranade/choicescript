@@ -20,11 +20,17 @@
 _global = this;
 
 (function() {
+  _global.transcriptMode = false;
   var userAgent, url, protocol;
   if (typeof window !== "undefined") {
     userAgent = navigator.userAgent;
     url = window.location.href;
     protocol = window.location.protocol;
+
+    // See if we should save a transcript or not
+    // Note that this code is duplicated in ui.js
+    var url = new URL(window.location.href);
+    _global.transcriptMode = url.searchParams.get("transcript") === "true";
   }
   _global.isWebOS = /webOS/.test(userAgent);
   _global.isMobile = _global.isWebOS || /Mobile/.test(userAgent);
@@ -765,12 +771,12 @@ function restoreGame(state, forcedScene, userRestored) {
     }
     if (!isStateValid(state)) {
         var startupScene = forcedScene ? forcedScene : window.nav.getStartupScene();
-        scene = new Scene(startupScene, window.stats, window.nav, {debugMode:window.debug, secondaryMode:secondaryMode, saveSlot:saveSlot});
+        scene = new Scene(startupScene, window.stats, window.nav, {debugMode:window.debug, secondaryMode:secondaryMode, saveSlot:saveSlot, transcriptMode:_global.transcriptMode});
     } else {
       if (forcedScene) state.stats.sceneName = forcedScene;
       window.stats = state.stats;
       // Someday, inflate the navigator using the state object
-      scene = new Scene(state.stats.sceneName, state.stats, window.nav, {debugMode:state.debug || window.debug, secondaryMode:secondaryMode, saveSlot:saveSlot});
+      scene = new Scene(state.stats.sceneName, state.stats, window.nav, {debugMode:state.debug || window.debug, secondaryMode:secondaryMode, saveSlot:saveSlot, transcriptMode:_global.transcriptMode});
       if (!forcedScene) {
         scene.temps = state.temps;
         scene.lineNum = state.lineNum;
@@ -787,7 +793,7 @@ function restoreGame(state, forcedScene, userRestored) {
 }
 
 function redirectScene(sceneName, label, originLine) {
-  var scene = new Scene(sceneName, window.stats, window.nav, {debugMode:window.debug});
+  var scene = new Scene(sceneName, window.stats, window.nav, {debugMode:window.debug, transcriptMode:_global.transcriptMode});
   if (label) scene.targetLabel = {label:label, origin:"choicescript_stats", originLine:originLine};
   clearScreen(function() {scene.execute();});
 }
