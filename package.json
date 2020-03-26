@@ -1,0 +1,29 @@
+{
+    "name": "choicescript",
+    "version": "1.0.0",
+    "description": "ChoiceScript language for multiple-choice games.",
+    "author": "Dan Fabulich",
+    "license": "CSL",
+    "main": "serve.js",
+    "bin": {
+        "transcriptserver": "./serve-transcript.js",
+        "csserver": "./serve.js"
+    },
+    "pkg": {
+        "assets": [
+            "index.html",
+            "index-transcript.html",
+            "web/**/*"
+        ]
+    },
+    "scripts": {
+        "compile-transcript": "pkg --targets host --output transcriptserver.exe ."
+    },
+    "devDependencies": {
+        "pkg": "^4.4.4"
+    },
+    "dependencies": {
+        "date-and-time": "^0.13.1",
+        "node-cleanup": "^2.1.2"
+    }
+}

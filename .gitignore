@@ -14,3 +14,6 @@ iphone/www
 randomtest-output.txt
 xmloutput
 deploy
+transcript-*
+node_modules/
+*.exe

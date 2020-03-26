@@ -1916,7 +1916,7 @@ Scene.prototype.page_break = function page_break(buttonName) {
     this.paragraph();
     this.finished = true;
 
-    this.addLineToTranscript(`*page_break ${buttonName} (line ${this.lineNum+1})`);
+    this.addLineToTranscript(`*page_break ${buttonName} (${this.name} line ${this.lineNum+1})`);
     this.addLineToTranscript("");
 
     var self = this;
