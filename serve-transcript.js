@@ -5,6 +5,7 @@ const path = require('path');
 const {URL} = require('url');
 const fs = require('fs');
 const child_process = require('child_process');
+const date = require('date-and-time');
 const nodeCleanup = require('node-cleanup');
 
 const dir = __dirname;
@@ -22,9 +23,12 @@ const mimeTypes = {
 }
 
 
+const now = new Date();
+const transcriptFilename = date.format(now, "[transcript-]YYYY-MM-DDTHH-MM-SS.txt");
 let previousTranscriptLineWasBlank = false;
 let nextTranscriptMessageNumber = 0;
 let transcriptQueue = [];
+let transcriptStream = fs.createWriteStream(transcriptFilename);
 
 // Add a line to the transcript
 function addToTranscript(line) {
@@ -34,9 +38,9 @@ function addToTranscript(line) {
   }
   else {
     if (previousTranscriptLineWasBlank) {
-      console.log("");
+      transcriptStream.write("\n");
     }
-    console.log(line);
+    transcriptStream.write(line+"\n");
     previousTranscriptLineWasBlank = false;
   }
 }
@@ -85,7 +89,7 @@ function processTranscriptMessage(messageString) {
     nextTranscriptMessageNumber = message.messageNumber;
   }
 
-  // Since the messages are asynchronous, push the new message on the queue and process
+  // Since the messages may not come through in order, push the new message on the queue and process
   transcriptQueue.push(message);
   processTranscriptQueue();
 }
@@ -148,6 +152,7 @@ const requestHandler = (request, response) => {
 
 nodeCleanup(function (exitCode, signal) {
   processTranscriptQueue(true);
+  transcriptStream.destroy();
 });
 
 const server = http.createServer(requestHandler);
