@@ -11,6 +11,18 @@ const nodeCleanup = require('node-cleanup');
 
 const dir = __dirname;
 
+var docxTranscript = true;
+
+var argv = require('minimist')(process.argv.slice(2));
+if (argv.help || argv.h) {
+  console.log("Usage: serve-transcript [options]\n\nOptions:\n\t--plain\tCreate a plain-text transcript instead of a Word document");
+  process.exit(0);
+}
+if (argv.plain) {
+  docxTranscript = false;
+}
+
+
 let base;
 
 const mimeTypes = {
@@ -24,37 +36,74 @@ const mimeTypes = {
 }
 
 const now = new Date();
-const transcriptFilename = date.format(now, "[transcript-]YYYY-MM-DDTHH-mm-ss[.docx]");
+var transcriptFilename = date.format(now, "[transcript-]YYYY-MM-DDTHH-mm-ss");
 let previousTranscriptLineWasBlank = false;
 let nextTranscriptMessageNumber = 0;
 let transcriptQueue = [];
-let transcript = officegen('docx');
-transcript.on ('error', function ( err ) {
-  console.log ( err );
-});
 
-var currentParagraph = transcript.createP();
+let transcriptStream = undefined;
+let transcriptDocx = undefined;
+let currentParagraph = undefined;
 
-// Add a line to the transcript
-function addToTranscript(line) {
+if (docxTranscript) {
+  transcriptFilename += ".docx";
+  transcriptDocx = officegen('docx');
+  transcriptDocx.on ('error', function ( err ) {
+    console.log ( err );
+  });
+  currentParagraph = transcriptDocx.createP();
+}
+else {
+  transcriptFilename += ".txt";
+  transcriptStream = fs.createWriteStream(transcriptFilename);
+}
+
+
+// Add a line to a .docx transcript
+function addToDocxTranscript(line) {
   // Collapse multiple blank lines into a single one
   if (line.trim() == "") {
     previousTranscriptLineWasBlank = true;
   }
   else {
     if (previousTranscriptLineWasBlank) {
-      currentParagraph = transcript.createP();
+      currentParagraph = transcriptDocx.createP();
     }
     else {
       currentParagraph.addLineBreak();
     }
     currentParagraph.addText(line);
     if (line.startsWith("*finish")) {
-      transcript.putPageBreak();
+      transcriptDocx.putPageBreak();
     }
     previousTranscriptLineWasBlank = false;
   }
 }
+
+// Add a line to a plain text transcript
+function addToTextTranscript(line) {
+  // Collapse multiple blank lines into a single one
+  if (line.trim() == "") {
+    previousTranscriptLineWasBlank = true;
+  }
+  else {
+    if (previousTranscriptLineWasBlank) {
+      transcriptStream.write("\n");
+    }
+    transcriptStream.write(line+"\n");
+    previousTranscriptLineWasBlank = false;
+  }
+}
+
+function addToTranscript(line) {
+  if (docxTranscript) {
+    addToDocxTranscript(line);
+  }
+  else {
+    addToTextTranscript(line);
+  }
+}
+
 
 // Process the transcript queue. If force is true, process the whole queue
 function processTranscriptQueue(force = false) {
@@ -164,20 +213,26 @@ const requestHandler = (request, response) => {
 nodeCleanup(function (exitCode, signal) {
   console.log("Finalizing queue");
   processTranscriptQueue(true);
-  let stream = fs.createWriteStream(transcriptFilename);
-  // Because generating the document happens asynchronously, wait for
-  // it to finish, then force kill the node process
-  stream.on('close', function() {
-    console.log(`Wrote transcript to ${transcriptFilename}`);
-    process.kill(process.pid, signal);
-  });
-  stream.on('error', function() {
-    console.log(err);
-    process.kill(process.pid, signal);
-  });
-  transcript.generate(stream);
-  nodeCleanup.uninstall();
-  return false;
+
+  if (docxTranscript && transcriptDocx !== undefined) {
+    let stream = fs.createWriteStream(transcriptFilename);
+    // Because generating the document happens asynchronously, wait for
+    // it to finish, then force kill the node process
+    stream.on('close', function() {
+      console.log(`Wrote transcript to ${transcriptFilename}`);
+      process.kill(process.pid, signal);
+    });
+    stream.on('error', function() {
+      console.log(err);
+      process.kill(process.pid, signal);
+    });
+    transcriptDocx.generate(stream);  
+    nodeCleanup.uninstall();
+    return false;
+  }
+  else if (transcriptStream !== undefined) {
+    transcriptStream.destroy();
+  }
 });
 
 const server = http.createServer(requestHandler);
