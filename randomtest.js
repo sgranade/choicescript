@@ -31,6 +31,7 @@ var highlightGenderPronouns = false;
 var showChoices = true;
 var avoidUsedOptions = true;
 var recordBalance = false;
+var saveStats = false;
 var slurps = {}
 function parseArgs(args) {
   for (var i = 0; i < args.length; i++) {
@@ -236,6 +237,9 @@ if (typeof importScripts != "undefined") {
       return booleanQuestion("After the test, show how many times each line was used?", false);
     }).then(function (answer) {
       showCoverage = answer;
+      return booleanQuestion("Save stats to a file (randomtest-stats.csv)?", false);
+    }).then(function (answer) {
+      saveStats = answer;
       return booleanQuestion("Write output to a file (randomtest-output.txt)?", false);
     }).then(function (answer) {
       if (answer) {
@@ -660,6 +664,38 @@ Scene.prototype.choice = function choice(data) {
 
 }
 
+var saveStatVariableNames = [];
+var savedStatValues = [];
+Scene.prototype.comment = function comment(line) {
+  var result = /^(\w*)(.*)/.exec(line);
+  if (!result) {
+    return;
+  }
+  var command = result[1].toLowerCase();
+  if (command == "savestatsetup") {
+    saveStatVariableNames = result[2].trim().split(/\s+/).map(item => item.toLowerCase());
+    saveStatVariableNames.forEach(variable => this.validateVariable(variable));
+  }
+  else if (command == "savestats") {
+    console.log("savestats");
+    var currentValues = saveStatVariableNames.map(variable => {
+      if ((!this.stats.hasOwnProperty(variable))) {
+        throw new Error(this.lineMsg() + "Tried to collect stats on non-existent variable '"+variable+"'");
+      }
+      var value = this.stats[variable];
+      if (value === null || value === undefined) {
+        throw new Error(this.lineMsg() + "Variable '"+variable+"' exists but has no value");
+      }
+      return value;
+    });
+    savedStatValues.push({
+      scene: this.name,
+      line: this.lineNum+1,
+      values: currentValues
+    });
+  }
+}
+
   Scene.prototype.loadScene = function loadScene() {
     var file = slurpFileCached('web/'+gameName+'/scenes/'+this.name+'.txt');
     this.loadLines(file);
@@ -811,7 +847,14 @@ function randomtest() {
     }
     console.log("RANDOMTEST PASSED");
     var duration = (new Date().getTime() - start)/1000;
-    console.log("Time: " + duration + "s")
+    console.log("Time: " + duration + "s");
+    if (saveStats && saveStatVariableNames.length > 0) {
+      var output = require('fs').createWriteStream('randomtest-stats.csv', {encoding: 'utf8'});
+      output.write("scene,line,"+saveStatVariableNames.join(",")+"\n", "utf8");
+      savedStatValues.forEach(result => {
+        output.write(result.scene+","+result.line+","+result.values.join(",")+"\n", "utf8");
+      })
+    }
     if (recordBalance) {
       (function() {
         for (var sceneName in balanceValues) {

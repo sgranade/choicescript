@@ -17,4 +17,6 @@
 
 This is the last scene!  The game is over!
 
+*comment savestats
+
 *ending

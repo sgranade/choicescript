@@ -810,8 +810,11 @@ Scene.prototype.runCommand = function runCommand(line) {
     var command = result[1].toLowerCase();
     var data = trim(result[2]);
     if (Scene.validCommands[command]) {
-        if ("comment" == command) return true;
-        if (Scene.initialCommands[command]) {
+      if ("comment" == command) {
+        this["comment"](data);
+        return true;
+      }
+      if (Scene.initialCommands[command]) {
           if ("startup" != String(this.name).toLowerCase() || !this.initialCommands) {
             throw new Error(this.lineMsg() + "Invalid "+command+" instruction, only allowed at the top of startup.txt");
           }

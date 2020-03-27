@@ -12,8 +12,9 @@ iphone/www
 .DS_Store
 *.svn
 randomtest-output.txt
+randomtest-stats.csv
+transcript-*
 xmloutput
 deploy
-transcript-*
 node_modules/
 *.exe

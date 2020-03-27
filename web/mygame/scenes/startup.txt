@@ -28,6 +28,8 @@
 *create leadership 50
 *create strength 50
 
+*comment savestatsetup leadership strength
+
 Welcome to your very first ChoiceScript game!
 
 Copyright 2010 by Dan Fabulich.
