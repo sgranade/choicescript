@@ -16,5 +16,13 @@
 ::"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
 ::either express or implied.
 @echo off
-node serve
+SETLOCAL EnableDelayedExpansion 
+
+SET ARGS=
+SET SCRIPT=serve
+FOR %%A in (%*) DO (
+  IF "%%A"=="/t" SET ARGS=!ARGS! --transcript
+  IF "%%A"=="/d" SET ARGS=!ARGS! --docx
+)
+node %SCRIPT% %ARGS%
 pause
