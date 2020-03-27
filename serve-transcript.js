@@ -6,6 +6,7 @@ const {URL} = require('url');
 const fs = require('fs');
 const child_process = require('child_process');
 const date = require('date-and-time');
+const officegen = require('officegen');
 const nodeCleanup = require('node-cleanup');
 
 const dir = __dirname;
@@ -22,13 +23,17 @@ const mimeTypes = {
   '.txt': 'text/plain',
 }
 
-
 const now = new Date();
-const transcriptFilename = date.format(now, "[transcript-]YYYY-MM-DDTHH-mm-ss.txt");
+const transcriptFilename = date.format(now, "[transcript-]YYYY-MM-DDTHH-mm-ss[.docx]");
 let previousTranscriptLineWasBlank = false;
 let nextTranscriptMessageNumber = 0;
 let transcriptQueue = [];
-let transcriptStream = fs.createWriteStream(transcriptFilename);
+let transcript = officegen('docx');
+transcript.on ('error', function ( err ) {
+  console.log ( err );
+});
+
+var currentParagraph = transcript.createP();
 
 // Add a line to the transcript
 function addToTranscript(line) {
@@ -38,9 +43,15 @@ function addToTranscript(line) {
   }
   else {
     if (previousTranscriptLineWasBlank) {
-      transcriptStream.write("\n");
+      currentParagraph = transcript.createP();
     }
-    transcriptStream.write(line+"\n");
+    else {
+      currentParagraph.addLineBreak();
+    }
+    currentParagraph.addText(line);
+    if (line.startsWith("*finish")) {
+      transcript.putPageBreak();
+    }
     previousTranscriptLineWasBlank = false;
   }
 }
@@ -151,8 +162,22 @@ const requestHandler = (request, response) => {
 }
 
 nodeCleanup(function (exitCode, signal) {
+  console.log("Finalizing queue");
   processTranscriptQueue(true);
-  transcriptStream.destroy();
+  let stream = fs.createWriteStream(transcriptFilename);
+  // Because generating the document happens asynchronously, wait for
+  // it to finish, then force kill the node process
+  stream.on('close', function() {
+    console.log(`Wrote transcript to ${transcriptFilename}`);
+    process.kill(process.pid, signal);
+  });
+  stream.on('error', function() {
+    console.log(err);
+    process.kill(process.pid, signal);
+  });
+  transcript.generate(stream);
+  nodeCleanup.uninstall();
+  return false;
 });
 
 const server = http.createServer(requestHandler);
@@ -175,4 +200,4 @@ server.listen({port: 0, host:'127.0.0.1'}, (err) => {
   console.log(`server is ready: ${base}`);
   console.log(`Press Ctrl-C or close this window to stop the server`);
   openUrl(base);
-})
+});
