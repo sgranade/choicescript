@@ -8,7 +8,7 @@ args=
 while getopts "td" options; do
 	case "${options}" in
 		t) args=$args --transcript
-		d) args=$args --plain
+		d) args=$args --docx
 done
 
 node serve $args

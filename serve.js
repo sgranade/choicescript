@@ -11,12 +11,33 @@ const nodeCleanup = require('node-cleanup');
 
 const dir = __dirname;
 
+const settingsFilename = path.normalize(`${dir}/serve.json`);
+
+
 var saveTranscript = false;
 var docxTranscript = false;
 
+// See if we have environment settings
+try {
+  if (fs.existsSync(settingsFilename)) {
+    console.log(`Loading settings from ${settingsFilename}`);
+    const rawdata = fs.readFileSync(settingsFilename);
+    const settings = JSON.parse(rawdata);
+    if (settings.transcript !== undefined) {
+      saveTranscript = settings.transcript;
+    }
+    if (settings.docx !== undefined) {
+      docxTranscript = settings.docx;
+    }
+  }
+}
+catch (err) {
+  console.log(err);
+}
+
 var argv = require('minimist')(process.argv.slice(2));
 if (argv.help || argv.h) {
-  console.log("Usage: serve-transcript [options]\n\nOptions:\n\t--transcript\tSave a transcript of the session\n\t--docx\t\tCreate an MS Word .docx transcript instead of a plain-text transcript");
+  console.log("Usage: serve [options]\n\nOptions:\n\t--transcript\tSave a transcript of the session\n\t--docx\t\tCreate an MS Word .docx transcript instead of a plain-text transcript");
   process.exit(0);
 }
 if (argv.transcript) {
