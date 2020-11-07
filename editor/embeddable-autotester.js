@@ -44,13 +44,7 @@ function autotester(sceneText, nav, sceneName, extraLabels) {
   Scene.prototype.feedback = function() {};
   Scene.prototype.save = function() {};
   Scene.prototype.restore_purchases = function() {};
-  Scene.prototype.purchase = function(data) {
-    var result = /^(\w+)\s+(\S+)\s+(.*)/.exec(data);
-    if (!result) throw new Error(this.lineMsg() + "invalid line; can't parse purchaseable product: " + data);
-    var product = result[1];
-    var priceGuess = trim(result[2]);
-    var label = trim(result[3]);
-    if (typeof this.temps["choice_purchased_"+product] === "undefined") throw new Error(this.lineMsg() + "Didn't check_purchases on this page");
+  Scene.prototype.buyButton = function (product, priceGuess, label) {
     if (seen[label]) return;
     var scene = this.clone();
     scene.testPath.push(',');
@@ -454,6 +448,12 @@ function autotester(sceneText, nav, sceneName, extraLabels) {
   log("executing");
   scene.execute();
   
+  while(scene = sceneList.shift()) {
+    log (scene.testPath.join(''));
+    //log(sceneList.length);
+    scene.resume();
+  }
+
   if (extraLabels) {
     for (var i = 0; i < extraLabels.length; i++) {
       var extraLabel = extraLabels[i];
@@ -467,6 +467,11 @@ function autotester(sceneText, nav, sceneName, extraLabels) {
       scene.testPath = [sceneName,",","goto " + extraLabel.label];
       log (scene.testPath.join(''));
       scene.execute();
+      while(scene = sceneList.shift()) {
+        log (scene.testPath.join(''));
+        //log(sceneList.length);
+        scene.resume();
+      }
     }
   }
 

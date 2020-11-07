@@ -96,7 +96,7 @@ if (typeof importScripts != "undefined") {
   console = {
     log: function(msg) {
       if (typeof msg == "string") {
-        postMessage({msg:msg});
+        postMessage({msg:msg.replace(/\n/g, '[n/]')});
         countWords(msg);
       } else if (msg.stack && msg.message) {
         postMessage({msg:msg.message, stack:msg.stack});
@@ -146,7 +146,6 @@ if (typeof importScripts != "undefined") {
   printFooter = function() {};
   printShareLinks = function() {};
   printLink = function() {};
-  printImage = function() {};
   showPassword = function() {};
 
   isRegistered = function() {return false;};
@@ -190,8 +189,6 @@ if (typeof importScripts != "undefined") {
         println(msg);
         console.log("");
       };
-
-      Scene.prototype.printLine = oldPrintLine;
     }
     randomtest();
   };
@@ -292,6 +289,10 @@ if (typeof importScripts != "undefined") {
   }
 }
 
+printImage = function printImage(source, alignment, alt, invert) {
+  console.log('[IMAGE: ' + (alt || source) + ']');
+}
+
 clearScreen = function clearScreen(code) {
   timeout = code;
 };
@@ -387,8 +388,8 @@ Scene.prototype["goto"] = function scene_goto(data) {
   if (!this.localCoverage) this.localCoverage = {};
   if (this.localCoverage[this.lineNum]) {
     this.localCoverage[this.lineNum]++;
-    if (this.localCoverage[this.lineNum] > this.looplimit_count) {
-      throw new Error(this.lineMsg() + "visited this line too many times");
+    if (this.looplimit_count && this.localCoverage[this.lineNum] > this.looplimit_count) {
+      throw new Error(this.lineMsg() + "visited this line too many times (" + this.looplimit_count + ")");
     }
   } else {
     this.localCoverage[this.lineNum] = 1;
@@ -405,7 +406,7 @@ Scene.prototype.check_purchase = function scene_checkPurchase(data) {
   for (var i = 0; i < products.length; i++) {
     this.temps["choice_purchased_"+products[i]] = !isTrial;
   }
-  this.temps.choice_purchase_supported = isTrial;
+  this.temps.choice_purchase_supported = !!isTrial;
   this.temps.choice_purchased_everything = !isTrial;
 }
 
@@ -586,13 +587,9 @@ Scene.prototype.goto_scene = function random_goto_scene(data) {
   this.oldGotoScene.apply(this, arguments);
 }
 
-Scene.prototype.purchase = function random_purchase(data) {
-  var result = /^(\w+)\s+(\S+)\s+(.*)/.exec(data);
-  if (!result) throw new Error(this.lineMsg() + "invalid line; can't parse purchaseable product: " + data);
-  var product = result[1];
-  var priceGuess = trim(result[2]);
-  var label = trim(result[3]);
-  if (typeof this.temps["choice_purchased_"+product] === "undefined") throw new Error(this.lineMsg() + "Didn't check_purchases on this page");
+Scene.prototype.buyButton = function random_buyButton(product, priceGuess, label, title) {
+  println('[Buy '+title+' Now for '+priceGuess+']');
+  println("");
 };
 
 Scene.prototype.choice = function choice(data) {

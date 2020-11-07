@@ -146,7 +146,7 @@ Scene.prototype.printLoop = function printLoop() {
             this.dedent(indent);
         }
         // Ability to end a choice #option without goto is guarded by implicit_control_flow variable
-        if (this.temps._choiceEnds[this.lineNum] && 
+        if (this.temps._choiceEnds[this.lineNum] &&
                 (this.stats["implicit_control_flow"] || this.temps._fakeChoiceDepth > 0)) {
             // Skip to the end of the choice if we hit the end of an #option
             this.rollbackLineCoverage();
@@ -183,7 +183,7 @@ Scene.prototype.dedent = function dedent(newDent) {};
 
 Scene.prototype.printLine = function printLine(line) {
     if (!line) return null;
-    line = this.replaceVariables(line.replace(/^ */, ""));
+    line = this.replaceVariables(line.replace(/^\s*/, ""));
     this.accumulatedParagraph.push(line);
     // insert extra space unless the line ends with hyphen or dash
     if (!/([-\u2011-\u2014]|\[c\/\])$/.test(line)) this.accumulatedParagraph.push(' ');
@@ -309,11 +309,11 @@ Scene.prototype.loadSceneFast = function loadSceneFast(url) {
     var self = this;
     if (typeof cachedResults != "undefined" && cachedResults && cachedResults[this.name]) {
       result = window.cachedResults[this.name];
-      return this.loadLinesFast(result.crc, result.lines, result.labels);
+      return safeTimeout(function() {self.loadLinesFast(result.crc, result.lines, result.labels);}, 0);
     } else if (typeof allScenes != "undefined") {
       result = allScenes[this.name];
       if (!result) throw new Error("Couldn't load scene '" + this.name + "'\nThe file doesn't exist.");
-      return this.loadLinesFast(result.crc, result.lines, result.labels);
+      return safeTimeout(function() {self.loadLinesFast(result.crc, result.lines, result.labels);}, 0);
     } else if (typeof window != "undefined" && window.isIosApp && window.isFile && !window.isOmnibusApp) {
       startLoading();
       var startedWaiting = new Date().getTime();
@@ -465,7 +465,7 @@ Scene.prototype.loadSceneFast = function loadSceneFast(url) {
         } else if (xhr.responseText === "") {
           throw new Error("Couldn't load " + url + "\nThe file is probably missing or empty.");
         }
-        
+
         if (!window.cachedResults) window.cachedResults = {};
         cachedResults[self.name] = result;
         self.loadLinesFast(result.crc, result.lines, result.labels);
@@ -763,6 +763,10 @@ Scene.prototype.execute = function execute() {
       var subsceneStack = this.stats.choice_subscene_stack || [];
       if (!subsceneStack.length) this.save("backup");
     }
+    if (this.redirectingFromStats) {
+      this.save("");
+      delete this.redirectingFromStats;
+    }
     this.printLoop();
 };
 
@@ -1014,14 +1018,14 @@ Scene.prototype.save = function save(slot) {
         }
         tempStatWrites = {};
       }
-      
+
       saveCookie(function() {}, slot, this.stats, this.temps, this.lineNum, this.indent, this.debugMode, this.nav);
     }
 };
 
 // *goto labelName
 // Go to the line labeled with the label command *label labelName
-// 
+//
 // goto by reference
 //   *create foo "labelName"
 //   *goto {foo}
@@ -1122,13 +1126,18 @@ Scene.prototype["return"] = function scene_return() {
       scene.lineNum = stackFrame.lineNum;
       scene.indent = stackFrame.indent;
       scene.accumulatedParagraph = this.accumulatedParagraph;
-      scene.execute();
+      if (this.randomtest) {
+        // pop the stack in randomtest to avoid overflow
+        clearScreen(function() {scene.execute()});
+      } else {
+        scene.execute();
+      }
     } else if (!this.temps.choice_substack && !this.stats.choice_subscene_stack) {
       throw new Error(this.lineMsg() + "invalid return; gosub has not yet been called");
     } else {
       throw new Error(this.lineMsg() + "invalid return; we've already returned from the last gosub");
     }
-    
+
 };
 
 // *gotoref expression
@@ -1262,6 +1271,7 @@ Scene.prototype.goto_scene = function gotoScene(data) {
     scene.accumulatedParagraph = this.accumulatedParagraph;
     if (typeof result.label != "undefined") scene.targetLabel = {label:result.label, origin:this.name, originLine:this.lineNum};
     if (typeof result.param != "undefined") scene.temps.param = result.param;
+    if (this.redirectingFromStats) scene.redirectingFromStats = true;
     scene.execute();
 };
 
@@ -1281,6 +1291,8 @@ Scene.prototype.redirect_scene = function redirectScene(data) {
   var self = this;
   redirectFromStats(sceneName, label, this.lineNum, function() {
     delete self.secondaryMode;
+    delete self.saveSlot;
+    self.redirectingFromStats = true;
     self.goto_scene(data);
   });
 };
@@ -1342,16 +1354,58 @@ Scene.prototype.check_purchase = function scene_checkPurchase(data) {
   });
 };
 
-Scene.prototype.purchase = function purchase_button(data) {
-  var result = /^(\w+)\s+(\S+)\s+(.*)/.exec(data);
-  if (!result) throw new Error(this.lineMsg() + "invalid line; can't parse purchaseable product: " + data);
-  var product = result[1];
-  var priceGuess = trim(result[2]);
-  var label = trim(result[3]);
+Scene.prototype.parsePurchase = function parsePurchase(data) {
+  var result;
+  if (/^\{/.test(data)) {
+    try {
+      result = JSON.parse(data);
+    } catch (e) {
+      throw new Error(this.lineMsg() + "Couldn't parse purchase JSON: " + e)
+    }
+    if (!result.product) {
+      throw new Error(this.lineMsg() + "JSON missing product");
+    }
+    if (!result['goto']) {
+      throw new Error(this.lineMsg() + "JSON missing goto");
+    }
+    if (result.priceGuess && result.discount) {
+      throw new Error(this.lineMsg() + "JSON has both top-level priceGuess and discount; there should be one or the other");
+    }
+    if (!(result.priceGuess || result.discount)) {
+      throw new Error(this.lineMsg() + "JSON has neither top-level priceGuess nor discount; there should be one or the other");
+    }
+    if (result.discount) {
+      if (!result.discount.end) throw new Error(this.lineMsg() + "JSON discount doesn't include end");
+      result.discount.end = parseDateStringInCurrentTimezone(result.discount.end, this.lineNum + 1);
+      if (!result.discount.lowPrice) throw new Error(this.lineMsg() + "JSON discount doesn't include lowPrice");
+      if (!/^\$/.test(result.discount.lowPrice)) throw new Error(this.lineMsg() + "lowPrice " + fullPriceGuess + "doesn't start with dollar");
+      if (!result.discount.fullPrice) throw new Error(this.lineMsg() + "JSON discount doesn't include fullPrice");
+      if (!/^\$/.test(result.discount.fullPrice)) throw new Error(this.lineMsg() + "fullPrice " + fullPriceGuess + "doesn't start with dollar");
+    }
+    if (!result.title) result.title = "It";
+  } else {
+    var parsed = /^(\w+)\s+(\S+)\s+(.*)/.exec(data);
+    if (!parsed) throw new Error(this.lineMsg() + "invalid line; can't parse purchaseable product: " + data);
+    result = {product: parsed[1], priceGuess: parsed[2], "goto": parsed[3], title: "It"};
+  }
+  var product = result.product;
   if (!this.nav.products[product] && product != "adfree") {
     throw new Error(this.lineMsg() + "The product " + product + " wasn't declared in a *product command");
   }
-  if (typeof this.temps["choice_purchased_"+product] === "undefined") throw new Error(this.lineMsg() + "Didn't check_purchases on this page");
+  if (typeof this.temps["choice_purchased_" + product] === "undefined") throw new Error(this.lineMsg() + "Didn't check_purchases on this page");
+  return result;
+}
+
+Scene.prototype.purchase = function purchase(data) {
+  var parsed = this.parsePurchase(data);
+  if (parsed.discount) {
+    this.buyButtonDiscount(parsed.product, parsed.discount.end, parsed.discount.fullPrice, parsed.discount.lowPrice, parsed['goto'], parsed.title);
+  } else {
+    this.buyButton(parsed.product, parsed.priceGuess, parsed['goto'], parsed.title);
+  }
+}
+
+Scene.prototype.buyButton = function(product, priceGuess, label, title) {
   this.finished = true;
   this.skipFooter = true;
   var self = this;
@@ -1365,9 +1419,9 @@ Scene.prototype.purchase = function purchase_button(data) {
       var prerelease = self.getVar('choice_prerelease');
       var buttonText;
       if (prerelease) {
-        buttonText = "Pre-Order It";
+        buttonText = "Pre-Order " + title;
       } else {
-        buttonText = "Buy It Now";
+        buttonText = "Buy "+title+" Now";
       }
       if (price != "hide") {
         buttonText += " for " + price;
@@ -1409,7 +1463,7 @@ Scene.prototype.purchase = function purchase_button(data) {
           }
         );
       }
-      
+
       self.skipFooter = false;
       self.finished = false;
       self.execute();
@@ -1434,6 +1488,11 @@ Scene.prototype.purchase_discount = function purchase_discount(line) {
   if (!startsWithDollar.test(discountedPriceGuess)) {
     throw new Error(this.lineMsg() + "discounted price guess "+discountedPriceGuess+"doesn't start with dollar: " + line);
   }
+  var title = "It";
+  this.buyButtonDiscount(product, expectedEndDate, fullPriceGuess, discountedPriceGuess, label, title);
+}
+
+Scene.prototype.buyButtonDiscount = function buyButtonDiscount(product, expectedEndDate, fullPriceGuess, discountedPriceGuess, label, title) {
   var prerelease = this.getVar('choice_prerelease');
   var discountText;
   if (prerelease) {
@@ -1450,7 +1509,7 @@ Scene.prototype.purchase_discount = function purchase_discount(line) {
   } else {
     priceGuess = fullPriceGuess;
   }
-  this.purchase([product, priceGuess, label].join(" "));
+  this.buyButton(product, priceGuess, label, title);
 }
 
 Scene.prototype.print_discount = function print_Discount(line) {
@@ -1662,27 +1721,7 @@ Scene.prototype.parseOptions = function parseOptions(startIndent, choicesRemaini
         }
         if (indent <= startIndent) {
             // it's over!
-            // TODO is this error test valid?
-            if (choicesRemaining.length>1 && !suboptionsEncountered) {
-                throw new Error(this.lineMsg() + "invalid indent, there were subchoices remaining: [" + choicesRemaining.join(",") + "]");
-            }
-            if (bodyExpected && 
-                    (this.temps._fakeChoiceDepth === undefined || this.temps._fakeChoiceDepth < 1)) {
-                throw new Error(this.lineMsg() + "Expected choice body");
-            }
-            if (!atLeastOneSelectableOption) this.conflictingOptions("line " + (startingLine+1) + ": No selectable options");
-            if (expectedSubOptions) {
-                this.verifyOptionsMatch(expectedSubOptions, options);
-            }
-            this.rollbackLineCoverage();
-            prevOption = options[options.length-1];
-            this.lineNum = this.previousNonBlankLineNum();
-            if (!prevOption.endLine) prevOption.endLine = this.lineNum+1;
-            for (i = 0; i < choiceEnds.length; i++) {
-                this.temps._choiceEnds[choiceEnds[i]] = this.lineNum;
-            }
-            this.rollbackLineCoverage();
-            return options;
+            break;
         }
         if (indent < this.indent) {
             // TODO drift detection
@@ -1751,9 +1790,9 @@ Scene.prototype.parseOptions = function parseOptions(startIndent, choicesRemaini
             if ("print" == command) {
                 line = this.evaluateExpr(this.tokenizeExpr(data));
             } else if ("if" == command) {
+              choiceEnds.push(this.lineNum);
               ifResult = this.parseOptionIf(data, command);
               if (ifResult) {
-                choiceEnds.push(this.lineNum);
                 inlineIf = ifResult.condition;
                 if (ifResult.result) {
                   line = ifResult.line;
@@ -1837,13 +1876,27 @@ Scene.prototype.parseOptions = function parseOptions(startIndent, choicesRemaini
         }
         if (!unselectable) atLeastOneSelectableOption = true;
     }
-    if (bodyExpected && 
+
+    // TODO is this error test valid?
+    if (choicesRemaining.length>1 && !suboptionsEncountered) {
+        throw new Error(this.lineMsg() + "invalid indent, there were subchoices remaining: [" + choicesRemaining.join(",") + "]");
+    }
+    if (bodyExpected &&
             (this.temps._fakeChoiceDepth === undefined || this.temps._fakeChoiceDepth < 1)) {
         throw new Error(this.lineMsg() + "Expected choice body");
     }
     if (!atLeastOneSelectableOption) this.conflictingOptions("line " + (startingLine+1) + ": No selectable options");
+    if (expectedSubOptions) {
+        this.verifyOptionsMatch(expectedSubOptions, options);
+    }
+    this.rollbackLineCoverage();
     prevOption = options[options.length-1];
-    if (!prevOption.endLine) prevOption.endLine = this.lineNum;
+    this.lineNum = this.previousNonBlankLineNum();
+    if (!prevOption.endLine) prevOption.endLine = this.lineNum+1;
+    for (i = 0; i < choiceEnds.length; i++) {
+        this.temps._choiceEnds[choiceEnds[i]] = this.lineNum;
+    }
+    this.rollbackLineCoverage();
     return options;
 };
 
@@ -2901,7 +2954,7 @@ Scene.prototype.save_game = function save_game(destinationSceneName) {
           message.appendChild(messageText);
           return;
         }
-        
+
         recordEmail(email, function() {
           clearScreen(function() {
             saveCookie(function() {
@@ -3525,7 +3578,7 @@ Scene.prototype.delay_ending = function(data) {
           }
         });
 
-        var target = document.getElementById("0").parentElement;
+        var target = document.querySelector(".choice label");
 
         delayBreakStart(function(delayStart) {
           window.blockRestart = true;
