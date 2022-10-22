@@ -18,6 +18,9 @@
  */
 
 // autotest.js [path to ChoiceScript files] [path to scene files] [name of game]
+fs = require('fs');
+vm = require('vm');
+path = require('path');
 var list = process.argv;
 list.shift();
 list.shift();
@@ -25,18 +28,28 @@ var csPath = list.shift();
 var scenePath = list.shift();
 var gameName = list.shift();
 if (!gameName) gameName = "mygame";
-fs = require('fs');
-vm = require('vm');
-path = require('path');
+// If csPath isn't passed, assume we're using the CS repo layout and not the one for VS Code
+if (!csPath) {
+	csPath = "web";
+	myGameJSPath = path.join(csPath, "mygame");
+	headlessJSPath = "";
+	embeddableAutotesterJSPath = "editor"
+	if (!scenePath) scenePath = path.join(myGameJSPath, "scenes");
+}
+else {
+	myGameJSPath = csPath;
+	headlessJSPath = csPath;
+	embeddableAutotesterJSPath = csPath;
+}
 load = function (file) {
 	vm.runInThisContext(fs.readFileSync(file), file);
 };
 load(path.join(csPath, "scene.js"));
 load(path.join(csPath, "navigator.js"));
 load(path.join(csPath, "util.js"));
-load(path.join(csPath, "mygame.js"));
-load(path.join(csPath, "headless.js"));
-load(path.join(csPath, "embeddable-autotester.js"));
+load(path.join(myGameJSPath, "mygame.js"));
+load(path.join(headlessJSPath, "headless.js"));
+load(path.join(embeddableAutotesterJSPath, "embeddable-autotester.js"));
 print = function print(str) {
 	console.log(str);
 };
@@ -80,7 +93,7 @@ var uncovered;
 var sceneFileSets = {};
 verifyFileName = function verifyFileName(dir, name) {
 	var filePath = path.join(dir, name);
-	if (!fileExists(filePath)) throw new Error("File does not exist: " + name);
+	if (!fileExists(filePath)) throw new Error("File does not exist: " + filePath);
 	var canonicalName, fileName, i;
 	if (isRhino) {
 		var file = new java.io.File(filePath);
@@ -88,6 +101,11 @@ verifyFileName = function verifyFileName(dir, name) {
 		canonicalName = file.getCanonicalFile().getName();
 		if (fileName != canonicalName) throw new Error("Incorrect capitalization/canonicalization; the file is called " + canonicalName + " but you requested " + name);
 	} else {
+    var match = /(.*)\/([^\/]*)/.exec(name);
+    if (match) {
+      dir += "/" + match[1];
+      name = match[2];
+    }
 		if (!sceneFileSets[dir]) {
 			sceneFileSets[dir] = {};
 			var sceneFiles = fs.readdirSync(scenePath);

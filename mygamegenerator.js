@@ -12,6 +12,7 @@ if (typeof load == "undefined") {
 }
 
 gameDir = args[0] || "mygame";
+beta = (args[1] === '"beta"');
 
 function parseSceneList(lines, lineNum) {
   var nextIndent = null;
@@ -88,6 +89,31 @@ function parseCheckPurchase(data) {
   }
 }
 
+function parseCreateValue(value) {
+  if (/^true$/i.test(value)) value = "true";
+  if (/^false$/i.test(value)) value = "false";
+  if (/^".*"$/.test(value)) value = value.slice(1, -1).replace(/\\(.)/g, "$1");
+  return value;
+}
+
+function parseCreateArray(line) {
+  var result = /^(\w+)\s+(.*)/.exec(line);
+  var variable = result[1].toLowerCase();
+  var values = result[2].split(/\s+/);
+  var length = Number(values.shift());
+  if (values.length === 1) {
+    var value = parseCreateValue(values[0]);
+    for (var i = 0; i < length; i++) {
+      stats[variable + "_" + (i + 1)] = value;
+    }
+  } else {
+    for (var i = 0; i < length; i++) {
+      var value = parseCreateValue(values[i]);
+      stats[variable + "_" + (i + 1)] = value;
+    }
+  }
+}
+
 var lines = slurpFileLines("web/"+gameDir+"/scenes/startup.txt");
 var stats = {}, purchases = {}, productMap = {};
 var scenes = ["startup"];
@@ -95,7 +121,7 @@ var create = /^\*create +(\w+) +(.*)/;
 var result, variable, value;
 var achievements = [];
 
-var ignoredInitialCommands = {"comment":1, "title":1, "author":1};
+var ignoredInitialCommands = {"comment":1, "author":1, "bug": 1};
 
 for (var i = 0; i < lines.length; i++) {
   var line = (""+lines[i]).trim();
@@ -108,16 +134,17 @@ for (var i = 0; i < lines.length; i++) {
   else if (command == "create") {
     var result = /^(\w*)(.*)/.exec(data);
     variable = result[1];
-    value = result[2].trim();
-    if (/^true$/i.test(value)) value = "true";
-    if (/^false$/i.test(value)) value = "false";
-    value = JSON.parse(value);
+    value = parseCreateValue(result[2].trim());
     stats[variable.toLowerCase()] = value;
+  } else if (command == "create_array") {
+    parseCreateArray(data);
   } else if (command == "scene_list") {
     result = parseSceneList(lines, i);
     scenes = result.scenes;
     purchases = result.purchases;
     i = result.lineNum;
+  } else if (command == "title") {
+    stats.choice_title = data;
   } else if (command == "achievement") {
     i = parseAchievement(data, lines, i);
   } else if (command == "product") {
@@ -168,11 +195,19 @@ logJson(stats);
 
 console.log(";\npurchases = ");
 
-logJson(purchases);
+if (beta) {
+  console.log("{}");
+} else {
+  logJson(purchases);
+}
 
 console.log(";\nachievements = ");
 logJson(achievements);
-console.log(";");
+console.log(";\n");
+
+if (args[1] === '"beta"' || args[1] === '"beta-iap"') {
+  console.log("beta = " + args[1] + ";\n");
+}
 
 console.log("nav.setStartingStatsClone(stats);");
 console.log("if (achievements.length) {\n  nav.loadAchievements(achievements);\n}");

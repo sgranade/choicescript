@@ -39,6 +39,7 @@ var highlightGenderPronouns = false;
 var showChoices = true;
 var avoidUsedOptions = true;
 var recordBalance = false;
+var outputFile = undefined;
 var slurps = {}
 function parseArgs(args) {
 	for (var i = 0; i < args.length; i++) {
@@ -72,6 +73,8 @@ function parseArgs(args) {
 			showCoverage = (value !== "false");
 		} else if (name === "recordBalance") {
 			recordBalance = (value !== "false");
+    } else if (name === "outputFile") {
+      outputFile = value;
 		}
 	}
 	if (isTrial === null) {
@@ -84,6 +87,19 @@ function parseArgs(args) {
 		showCoverage = false;
 		avoidUsedOptions = false;
 	}
+  if (outputFile) {
+    var fs = require('fs');
+    var output = fs.openSync(outputFile, 'w');
+    console.log = function (msg) {
+      countWords(msg);
+      fs.writeSync(output, msg + '\n');
+    }
+    var oldError = console.error;
+    console.error = function (msg) {
+      oldError(msg);
+      fs.writeSync(output, msg + '\n');
+    }
+  }
 }
 
 var wordCount = 0;
@@ -372,6 +388,7 @@ Scene.prototype.page_break = function randomtest_page_break(buttonText) {
 	buttonText = this.replaceVariables(buttonText);
 	println("*page_break " + buttonText);
 	println("");
+  this.finished = false;
 	this.resetCheckedPurchases();
 };
 
@@ -487,6 +504,16 @@ Scene.prototype.restore_game = function (data) {
 		this["goto"](cancel);
 	}
 };
+
+Scene.prototype.advertisement = function randomtest_advertisement(durationInSeconds) {
+  if (this.name === "startup") {
+    throw new Error(this.lineMsg() + "*advertisement is not allowed in startup.txt");
+  }
+  if (/^\s*\*delay_break/.test(this.lines[this.lineNum - 1])) {
+    throw new Error(this.lineMsg() + "*advertisement is not allowed immediately after *delay_break (*delay_break includes its own advertisement)");
+  }
+  if (durationInSeconds) this.delay_break(durationInSeconds);
+}
 
 Scene.prototype.delay_break = function randomtest_delayBreak(durationInSeconds) {
 	if (isNaN(durationInSeconds * 1)) throw new Error(this.lineMsg() + "invalid duration");
@@ -649,18 +676,30 @@ Scene.prototype.choice = function choice(data) {
 	if (showChoices) {
 		if (showText) {
 			if (logText) {
-				this.randomLog("*choice " + (choiceLine + 1) + '#' + (index + 1) + ' (line ' + item.ultimateOption.line + ')');
-				// it would be nice to handle choice groups here
-				for (var i = 0; i < flattenedOptions.length; i++) {
-					if (i > 0) {
-						this.printLine("[n/]");
-					} else {
-						this.printLine(" ");
-					}
-					this.printLine("\u2022 " + (i === index ? "\u2605 " : "") + flattenedOptions[i].ultimateOption.name);
-				}
-				this.paragraph();
-			}
+        this.randomLog("*choice " + (choiceLine + 1) + '#' + (index + 1) + ' (line ' + item.ultimateOption.line + ')');
+        var currentOptions = options;
+        for (var i = 0; i < groups.length; i++) {
+          if (groups.length > 1) {
+            var article = "a"
+            if (/^[aeiou].*/i.test(groups[i])) article = "an";
+            this.printLine("Select " + article + " " + groups[i] + ":");
+            this.paragraph();
+          }
+          var index = item[groups[i]];
+          var first = true;
+          for (var j = 0; j < currentOptions.length; j++) {
+            if (currentOptions[j].unselectable) continue;
+            if (first) {
+              first = false;
+              this.printLine(" ");
+            } else {
+              this.printLine("[n/]");
+            }
+            this.printLine("\u2022 " + (j === index ? "\u2605 " : "") + currentOptions[j].name);
+          }
+          this.paragraph();
+          currentOptions = currentOptions[0].suboptions;
+        }
 		} else {
 			var optionName = this.replaceVariables(item.ultimateOption.name);
 			this.randomLog("*choice " + (choiceLine + 1) + '#' + (index + 1) + ' (line ' + item.ultimateOption.line + ') #' + optionName);
