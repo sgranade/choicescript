@@ -101,6 +101,21 @@ function parseArgs(args) {
     }
   }
 }
+function createJSImportPaths() {
+	// If csPath isn't set, assume we're using the CS repo layout and not the one for VS Code
+	if (!csPath) {
+		csPath = "web";
+		myGameJSPath = path.join(csPath, "mygame");
+		headlessJSPath = "";
+		seedrandomJSPath = "";
+		if (!projectPath) projectPath = path.join(myGameJSPath, "scenes");
+	}
+	else {
+		myGameJSPath = csPath;
+		headlessJSPath = csPath;
+		seedrandomJSPath = csPath;
+	}
+}
 
 var wordCount = 0;
 
@@ -294,6 +309,7 @@ if (typeof importScripts != "undefined") {
 	fs = require('fs');
 	path = require('path');
 	vm = require('vm');
+	createJSImportPaths();
 	if (outFilePath) {
 		if (fs.existsSync(outFilePath)) {
 			throw new Error("Specified output file already exists.");
@@ -308,9 +324,9 @@ if (typeof importScripts != "undefined") {
 	load(path.join(csPath, "scene.js"));
 	load(path.join(csPath, "navigator.js"));
 	load(path.join(csPath, "util.js"));
-	load(path.join(csPath, "mygame.js"));
-	load(path.join(csPath, "headless.js"));
-	load(path.join(csPath, "seedrandom.js"));
+	load(path.join(myGameJSPath, "mygame.js"));
+	load(path.join(headlessJSPath, "headless.js"));
+	load(path.join(seedrandomJSPath, "seedrandom.js"));
 } else if (typeof args == "undefined") {
 	isRhino = true;
 	args = arguments;
@@ -700,6 +716,7 @@ Scene.prototype.choice = function choice(data) {
           this.paragraph();
           currentOptions = currentOptions[0].suboptions;
         }
+			}
 		} else {
 			var optionName = this.replaceVariables(item.ultimateOption.name);
 			this.randomLog("*choice " + (choiceLine + 1) + '#' + (index + 1) + ' (line ' + item.ultimateOption.line + ') #' + optionName);
