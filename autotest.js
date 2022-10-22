@@ -108,7 +108,7 @@ verifyFileName = function verifyFileName(dir, name) {
     }
 		if (!sceneFileSets[dir]) {
 			sceneFileSets[dir] = {};
-			var sceneFiles = fs.readdirSync(scenePath);
+            var sceneFiles = fs.readdirSync(dir);
 			for (i = sceneFiles.length - 1; i >= 0; i--) {
 				sceneFileSets[dir][sceneFiles[i]] = 1;
 			}
