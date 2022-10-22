@@ -39,6 +39,7 @@ var highlightGenderPronouns = false;
 var showChoices = true;
 var avoidUsedOptions = true;
 var recordBalance = false;
+var saveStats = false;
 var outputFile = undefined;
 var slurps = {}
 function parseArgs(args) {
@@ -73,8 +74,10 @@ function parseArgs(args) {
 			showCoverage = (value !== "false");
 		} else if (name === "recordBalance") {
 			recordBalance = (value !== "false");
-    } else if (name === "outputFile") {
-      outputFile = value;
+		} else if (name === "saveStats") {
+			saveStats = (value !== "false");
+		} else if (name === "outputFile") {
+			outputFile = value;
 		}
 	}
 	if (isTrial === null) {
@@ -87,19 +90,19 @@ function parseArgs(args) {
 		showCoverage = false;
 		avoidUsedOptions = false;
 	}
-  if (outputFile) {
-    var fs = require('fs');
-    var output = fs.openSync(outputFile, 'w');
-    console.log = function (msg) {
-      countWords(msg);
-      fs.writeSync(output, msg + '\n');
-    }
-    var oldError = console.error;
-    console.error = function (msg) {
-      oldError(msg);
-      fs.writeSync(output, msg + '\n');
-    }
-  }
+	if (outputFile) {
+		var fs = require('fs');
+		var output = fs.openSync(outputFile, 'w');
+		console.log = function (msg) {
+			countWords(msg);
+			fs.writeSync(output, msg + '\n');
+		}
+		var oldError = console.error;
+		console.error = function (msg) {
+			oldError(msg);
+			fs.writeSync(output, msg + '\n');
+		}
+	}
 }
 function createJSImportPaths() {
 	// If csPath isn't set, assume we're using the CS repo layout and not the one for VS Code
@@ -286,6 +289,9 @@ if (typeof importScripts != "undefined") {
 			return booleanQuestion("After the test, show how many times each line was used?", false);
 		}).then(function (answer) {
 			showCoverage = answer;
+			return booleanQuestion("Save stats to a file (randomtest-stats.csv)?", false);
+		}).then(function (answer) {
+			saveStats = answer;
 			return booleanQuestion("Write output to a file (randomtest-output.txt)?", false);
 		}).then(function (answer) {
 			if (answer) {
@@ -692,30 +698,30 @@ Scene.prototype.choice = function choice(data) {
 	if (showChoices) {
 		if (showText) {
 			if (logText) {
-        this.randomLog("*choice " + (choiceLine + 1) + '#' + (index + 1) + ' (line ' + item.ultimateOption.line + ')');
-        var currentOptions = options;
-        for (var i = 0; i < groups.length; i++) {
-          if (groups.length > 1) {
-            var article = "a"
-            if (/^[aeiou].*/i.test(groups[i])) article = "an";
-            this.printLine("Select " + article + " " + groups[i] + ":");
-            this.paragraph();
-          }
-          var index = item[groups[i]];
-          var first = true;
-          for (var j = 0; j < currentOptions.length; j++) {
-            if (currentOptions[j].unselectable) continue;
-            if (first) {
-              first = false;
-              this.printLine(" ");
-            } else {
-              this.printLine("[n/]");
-            }
-            this.printLine("\u2022 " + (j === index ? "\u2605 " : "") + currentOptions[j].name);
-          }
-          this.paragraph();
-          currentOptions = currentOptions[0].suboptions;
-        }
+				this.randomLog("*choice " + (choiceLine + 1) + '#' + (index + 1) + ' (line ' + item.ultimateOption.line + ')');
+				var currentOptions = options;
+				for (var i = 0; i < groups.length; i++) {
+					if (groups.length > 1) {
+						var article = "a"
+						if (/^[aeiou].*/i.test(groups[i])) article = "an";
+						this.printLine("Select " + article + " " + groups[i] + ":");
+						this.paragraph();
+					}
+					var index = item[groups[i]];
+					var first = true;
+					for (var j = 0; j < currentOptions.length; j++) {
+						if (currentOptions[j].unselectable) continue;
+						if (first) {
+							first = false;
+							this.printLine(" ");
+						} else {
+							this.printLine("[n/]");
+						}
+						this.printLine("\u2022 " + (j === index ? "\u2605 " : "") + currentOptions[j].name);
+					}
+					this.paragraph();
+					currentOptions = currentOptions[0].suboptions;
+				}
 			}
 		} else {
 			var optionName = this.replaceVariables(item.ultimateOption.name);
@@ -773,6 +779,8 @@ Scene.prototype.choice = function choice(data) {
 
 }
 
+var saveStatVariableNames = [];
+var savedStatValues = [];
 Scene.prototype.comment = function comment(line) {
 	var result = /^(\w*)(.*)/.exec(line);
 	if (!result) {
@@ -790,6 +798,28 @@ Scene.prototype.comment = function comment(line) {
 		else if (subcommand[1] == "off") {
 			logText = false;
 		}
+	}
+	else if (command == "savestatsetup") {
+		saveStatVariableNames = result[2].trim().split(/\s+/).map(item => item.toLowerCase());
+		saveStatVariableNames.forEach(variable => this.validateVariable(variable));
+	}
+	else if (command == "savestats") {
+		console.log("savestats");
+		var currentValues = saveStatVariableNames.map(variable => {
+			if ((!this.stats.hasOwnProperty(variable))) {
+			throw new Error(this.lineMsg() + "Tried to collect stats on non-existent variable '" + variable + "'");
+			}
+			var value = this.stats[variable];
+			if (value === null || value === undefined) {
+			throw new Error(this.lineMsg() + "Variable '" + variable + "' exists but has no value");
+			}
+			return value;
+		});
+		savedStatValues.push({
+			scene: this.name,
+			line: this.lineNum + 1,
+			values: currentValues
+		});
 	}
 }  
 
@@ -833,6 +863,16 @@ try {
 }
 
 nav.setStartingStatsClone(stats);
+
+function checkSaveStats() {
+	if (saveStats && saveStatVariableNames.length > 0) {
+		var output = require('fs').createWriteStream('randomtest-stats.csv', { encoding: 'utf8' });
+		output.write("scene,line," + saveStatVariableNames.join(",") + "\n", "utf8");
+		savedStatValues.forEach(result => {
+		  output.write(result.scene + "," + result.line + "," + result.values.join(",") + "\n", "utf8");
+		})
+	}
+}
 
 var processExit = false;
 var start;
@@ -883,7 +923,8 @@ function randomtestAsync(i, showCoverage) {
 		console.log("RANDOMTEST PASSED");
 		var end = new Date().getTime();
 		var duration = (end - start) / 1000;
-		console.log("Time: " + duration + "s")
+		console.log("Time: " + duration + "s");
+		checkSaveStats();
 		return;
 	}
 
@@ -950,7 +991,8 @@ function randomtest() {
 		}
 		console.log("RANDOMTEST PASSED");
 		var duration = (new Date().getTime() - start) / 1000;
-		console.log("Time: " + duration + "s")
+		console.log("Time: " + duration + "s");
+		checkSaveStats();
 		if (recordBalance) {
 			(function () {
 				for (var sceneName in balanceValues) {
