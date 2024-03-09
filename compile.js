@@ -7,8 +7,7 @@ var loadFailed = false;
 var rootDir;
 
 if (typeof process != "undefined") {
-  var outputFile = process.argv[2];
-  if (!outputFile) throw new Error("Specify an output file on the command line");
+  var outputFile = process.argv[2] || "output.html";
   rootDir = process.argv[3];
   if (rootDir) {
     rootDir += "/";
@@ -26,7 +25,10 @@ if (typeof process != "undefined") {
   load(rootDir+"util.js");
   load("headless.js");
   load(rootDir+"mygame/mygame.js");
-  fs.writeFileSync(outputFile, compile(), "utf8");
+  load("mygamegenerator.js");
+  var {content} = compile();
+  fs.writeFileSync(outputFile, content, "utf8");
+  console.log('Generated', path.resolve(outputFile));
 }
 
 if (!rootDir) rootDir = "web/";
@@ -109,7 +111,11 @@ function compile(){
   console.log("\nExtracting js data from:");
   while (doesMatch = patt.exec(game_html)) {
     console.log(doesMatch[1]);
-    next_file = safeSlurpFile(rootDir+'mygame/' + doesMatch[1]);
+    if (doesMatch[1] === 'mygame.js') {
+      next_file = generateMygame();
+    } else {
+      next_file = safeSlurpFile(rootDir + 'mygame/' + doesMatch[1]);
+    }
     if (next_file != "undefined" && next_file !== null) {
       jsStore = jsStore + "\n;\n" + next_file;
     }
@@ -185,6 +191,14 @@ function compile(){
       }
     }
 
+    var csAuthor = "";
+    patt = /^\*author/i;
+    for (i = 0; i < scene["lines"].length; i++) {
+      if (patt.exec(scene["lines"][i])) {
+        csAuthor = scene["lines"][i];
+      }
+    }
+
     //if we have a title, set the <h1> and <title> tags to it
     if (csTitle != "") {
       patt = /^\*title[\s]+/i
@@ -196,11 +210,26 @@ function compile(){
       console.log("");
       console.log("Game title set to: " + csTitle);
     }
+    if (csAuthor != "") {
+      patt = /^\*author[\s]+/i
+      csAuthor = csAuthor.replace(patt, "");
+      patt = /<h2.*>.*<\/h2>/i;
+      if (patt.exec(bottom)) bottom = bottom.replace(patt, '<h2 id="author" class="gameTitle">by ' + csAuthor + "</h2>");
+      console.log("");
+      console.log("Author set to: " + csAuthor);
+    }
   
   var ifidLine = scene.lines.find(line => /^\*ifid/i.test(line));
   if (ifidLine) {
     var ifid = ifidLine.replace(/^\*ifid\s+/i, "").toUpperCase();
+    top = top.replace('window.storeName = null;', `window.storeName = "CS-${ifid}";`)
     top += `<meta property="ifiction:ifid" content="${ifid}" prefix="ifiction: http://babel.ifarchive.org/protocol/iFiction/">`;
+  } else {
+    console.log("WARNING: No *ifid. Refreshing the browser tab will erase all progress.");
+    try {
+      var example = crypto.randomUUID();
+      console.log("  You can use this randomized IFID: *ifid " + example);
+    } catch (e) {}
   }
 
   //7.2 Create the allScenes object
@@ -244,7 +273,7 @@ function compile(){
   //8. Reassemble the document (selfnote: allScenes object seems to cause issues if not in its own pair of script tags)
   console.log("Assembling new html file...");
   var new_game = top + "<script>" + scene_object + "<\/script><script>" + jsStore + "<\/script><style>" + cssStore + "</style>" + bottom;
-  return new_game;
+  return {content: new_game, title: csTitle};
 }
 
 function addFile(name) {

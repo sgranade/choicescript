@@ -4,14 +4,14 @@
 	<title>Randomtest</title>
 </head>
 <body>
-<p>Iterations: <input type="number" id="iterations" value="10000"></p>
-<p>Seed: <input type="number" id="seed" value="0"></p>
-<p><input type="checkbox" id="avoidUsedOptions" checked> Avoid used options (less random; finds bugs faster)</p>
-<p><input type="checkbox" id="showChoices" checked> Show choices selected during game</p>
-<p><input type="checkbox" id="showText"> Show full text during game</p>
-<p><input type="checkbox" id="highlightGenderPronouns"> Highlight gender pronouns</p>
-<p><input type="checkbox" id="showCoverage"> Show line coverage statistics after test</p>
-<p><input type="checkbox" id="autoScroll"> Automatically scroll to the bottom</p>
+<p>How many times would you like to run randomtest? <input type="number" id="iterations" value="10000"></p>
+<p>Starting seed number: <input type="number" id="seed" value="0"></p>
+<p><input type="checkbox" id="avoidUsedOptions" checked> <label for="avoidUsedOptions">Avoid used options (less random; finds bugs faster)</label></p>
+<p><input type="checkbox" id="showText"> <label for="showText">Show full text during game</p>
+<p><input type="checkbox" id="showChoices" checked> <label for="showChoices">Show choices selected during game</p>
+<p><input type="checkbox" id="highlightGenderPronouns"> <label for="highlightGenderPronouns">Highlight gender pronouns</p>
+<p><input type="checkbox" id="showCoverage"> <label for="showCoverage">After the test, show how many times each line was used</p>
+<p><input type="checkbox" id="autoScroll"> <label for="autoScroll">Automatically scroll to the bottom</p>
 <p style="display:none"><input type="checkbox" id="recordBalance"> Record data for auto() balancing</p>
 <p id="uploadPrompt" style="display:none"><input type="file" id="uploadDirectory" webkitdirectory> "Upload" choicescript folder (including randomtest.html)</p>
 <button id="start">Start Randomtest</button>
@@ -47,7 +47,7 @@ setInterval(function() {
     };
     document.body.appendChild(frag);
     messages = [];
-    if (queryArgs.autoScroll) window.scroll(0,document.height);
+    if (autoScroll) window.scroll(0,document.scrollingElement.scrollHeight);
   }
 }, 100);
 
@@ -109,6 +109,7 @@ if (queryArgs.autoScroll) document.getElementById("autoScroll").checked = queryA
 if (queryArgs.recordBalance) document.getElementById("recordBalance").checked = queryArgs.recordBalance;
 
 var clicked = false;
+var autoScroll;
 document.getElementById("start").onclick = function() {
   if (clicked) return;
   clicked = true;
@@ -120,6 +121,7 @@ document.getElementById("start").onclick = function() {
   var showChoices = document.getElementById("showChoices").checked;
   highlightGenderPronouns = document.getElementById("highlightGenderPronouns").checked;
   var recordBalance = document.getElementById("recordBalance").checked;
+  autoScroll = document.getElementById("autoScroll").checked;
   var isFile = "file:" === window.location.protocol;
   if (isFile) {
     var numFiles = uploadDirectory.files.length;
